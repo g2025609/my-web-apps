@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Python WorkStation</title>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
     <style>
@@ -12,9 +12,10 @@
             --accent: #3498db; 
             --sidebar-width: 280px;
         }
+        * { box-sizing: border-box; }
         body { font-family: 'Helvetica Neue', Arial, sans-serif; display: flex; height: 100vh; margin: 0; background: var(--bg); color: #333; overflow: hidden; }
         
-        /* サイドバーの開閉アニメーション */
+        /* サイドバー設定 */
         #sidebar { 
             width: var(--sidebar-width); 
             background: var(--panel); 
@@ -23,60 +24,115 @@
             display: flex; 
             flex-direction: column; 
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease, margin-left 0.3s ease;
-            position: relative;
-            z-index: 10;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: absolute; /* スマホで上に重ねるため */
+            height: 100%;
+            z-index: 100;
         }
         
-        /* サイドバーが閉じている状態 */
-        body.sidebar-closed #sidebar {
-            margin-left: calc(var(--sidebar-width) * -1 - 50px);
-        }
+        /* 閉じた状態（左側に隠す） */
+        body.sidebar-closed #sidebar { transform: translateX(-100%); }
 
         /* 開閉スイッチ（タブ） */
         #sidebar-toggle {
             position: absolute;
-            right: -40px;
-            top: 20px;
-            width: 40px;
+            right: -50px;
+            top: 15px;
+            width: 50px;
             height: 50px;
             background: var(--panel);
             color: white;
             border: none;
-            border-radius: 0 8px 8px 0;
+            border-radius: 0 12px 12px 0;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.2rem;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            font-size: 1.5rem;
+            box-shadow: 3px 0 8px rgba(0,0,0,0.15);
         }
 
-        #sidebar h3 { margin-top: 0; border-bottom: 2px solid #34495e; padding-bottom: 10px; font-size: 1.2rem; white-space: nowrap; }
+        #sidebar h3 { margin-top: 10px; border-bottom: 2px solid #34495e; padding-bottom: 10px; font-size: 1.2rem; }
         #project-list { flex-grow: 1; overflow-y: auto; margin: 20px 0; }
-        .menu-btn { width: 100%; padding: 12px; margin-bottom: 10px; background: #34495e; color: white; border: none; border-radius: 8px; cursor: pointer; text-align: left; transition: 0.2s; font-size: 0.95rem; white-space: nowrap; }
-        .menu-btn:hover { background: var(--accent); transform: translateX(5px); }
+        .menu-btn { width: 100%; padding: 15px; margin-bottom: 12px; background: #34495e; color: white; border: none; border-radius: 10px; cursor: pointer; text-align: left; font-size: 1rem; }
         
         /* メインエリア */
-        #main { flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 40px; overflow-y: auto; transition: width 0.3s ease; }
-        #title { margin: 0 0 20px 0; color: var(--panel); font-size: 2rem; }
-        #canvas-container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); line-height: 0; margin-bottom: 30px; }
-        #stage { max-width: 100%; height: auto; }
+        #main { 
+            flex-grow: 1; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 20px; 
+            overflow-y: auto; 
+            width: 100%;
+            margin-left: 0; /* 初期はサイドバーを隠す前提 */
+        }
 
-        #project-controls { width: 100%; max-width: 550px; }
+        /* キャンバスをレスポンシブに */
+        #canvas-container { 
+            background: white; 
+            padding: 10px; 
+            border-radius: 20px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+            line-height: 0; 
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 520px;
+            display: flex;
+            justify-content: center;
+        }
+        #stage { 
+            width: 100% !important; 
+            height: auto !important; 
+            max-width: 500px;
+            aspect-ratio: 1 / 1;
+        }
+
+        #title { font-size: 1.5rem; margin: 10px 0 15px 0; color: var(--panel); text-align: center; }
+        #project-controls { width: 100%; max-width: 500px; }
         
-        #actionBtn { margin-top: 25px; padding: 18px 80px; font-size: 1.3rem; background: #e74c3c; color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3); transition: 0.3s; }
-        #actionBtn:hover { background: #c0392b; transform: scale(1.05); }
-        #status { margin-top: 20px; color: #95a5a6; font-size: 0.85rem; }
+        /* アクションボタン（スマホで押しやすく巨大化） */
+        #actionBtn { 
+            margin: 20px 0;
+            width: 100%;
+            max-width: 400px;
+            padding: 20px; 
+            font-size: 1.4rem; 
+            background: #e74c3c; 
+            color: white; 
+            border: none; 
+            border-radius: 15px; 
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* オーバーレイ（サイドバーが開いている時に背景を暗くする） */
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 90;
+        }
+        body:not(.sidebar-closed) #overlay { display: block; }
+
+        @media (min-width: 769px) {
+            /* PCの場合はオーバーレイ不要、サイドバーを常に横に置く設定も可能 */
+            #main { padding: 40px; }
+            #sidebar-toggle { top: 20px; }
+        }
     </style>
 </head>
-<body>
+<body class="sidebar-closed"> <!-- 初期状態は閉じておく -->
+
+<div id="overlay" onclick="toggleSidebar()"></div>
 
 <div id="sidebar">
     <button id="sidebar-toggle" onclick="toggleSidebar()">☰</button>
     <h3>📁 Projects</h3>
     <div id="project-list"></div>
-    <div style="font-size: 0.75rem; color: #7f8c8d; text-align: center;">Powered by Pyodide</div>
+    <div style="font-size: 0.75rem; color: #7f8c8d; text-align: center; margin-top: auto;">Powered by Pyodide</div>
 </div>
 
 <div id="main">
@@ -86,7 +142,7 @@
     </div>
     <div id="project-controls"></div>
     <button id="actionBtn" onclick="triggerPython()">Run Action</button>
-    <div id="status">Initializing Python...</div>
+    <div id="status">Initializing...</div>
 </div>
 
 <script>
@@ -95,11 +151,8 @@
     const canvas = document.getElementById('stage');
     const ctx = canvas.getContext('2d');
 
-    // サイドバーの開閉切り替え
     function toggleSidebar() {
         document.body.classList.toggle('sidebar-closed');
-        const btn = document.getElementById('sidebar-toggle');
-        // サイドバーが閉じているときはアイコンを変えるなどの演出も可能
     }
 
     async function init() {
@@ -108,8 +161,7 @@
             document.getElementById('status').innerText = "Python Ready.";
             loadProjectList();
         } catch (e) {
-            document.getElementById('status').innerText = "Error: Python failed to load.";
-            console.error(e);
+            document.getElementById('status').innerText = "Load Error.";
         }
     }
     init();
@@ -124,40 +176,35 @@
             btn.innerText = "▶ " + dir;
             btn.onclick = () => {
                 loadProject(dir);
-                // モバイル端末などの場合、クリック時に自動で閉じるならここに追加
-                // if(window.innerWidth < 768) toggleSidebar();
+                if (window.innerWidth <= 768) toggleSidebar(); // スマホなら選択後に閉じる
             };
             list.appendChild(btn);
         });
     }
 
     async function loadProject(dir) {
-        document.getElementById('status').innerText = `Loading ${dir}...`;
+        document.getElementById('status').innerText = `Loading...`;
         try {
             const resp = await fetch(`./${dir}/main.py`);
-            if (!resp.ok) throw new Error("File not found");
             const code = await resp.text();
-            
             await pyodide.runPythonAsync(code);
             currentApp = pyodide.globals.get('App')();
             
             document.getElementById('title').innerText = dir;
-            
             const controls = document.getElementById('project-controls');
             controls.innerHTML = currentApp.get_html_layout ? currentApp.get_html_layout() : "";
             
-            const scripts = controls.querySelectorAll("script");
-            scripts.forEach(oldScript => {
+            // Scriptの再実行
+            controls.querySelectorAll("script").forEach(oldScript => {
                 const newScript = document.createElement("script");
                 newScript.text = oldScript.text;
                 document.body.appendChild(newScript).parentNode.removeChild(newScript);
             });
 
             render();
-            document.getElementById('status').innerText = "Project Loaded.";
+            document.getElementById('status').innerText = "Ready.";
         } catch (e) {
-            document.getElementById('status').innerText = "Load Error.";
-            console.error(e);
+            document.getElementById('status').innerText = "Error.";
         }
     }
 
@@ -188,20 +235,16 @@
                 ctx.arc(cx, cy, obj.radius, obj.start, obj.end);
                 ctx.lineTo(cx, cy);
                 ctx.fill();
-                ctx.strokeStyle = "white";
-                ctx.lineWidth = 2;
-                ctx.stroke();
+                ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.stroke();
             } 
             else if (obj.type === 'rect') {
                 ctx.beginPath();
-                ctx.strokeStyle = obj.color || "black";
-                ctx.lineWidth = obj.lineWidth || 2;
+                ctx.strokeStyle = obj.color || "black"; ctx.lineWidth = 3;
                 ctx.strokeRect(cx - obj.width/2, cy - obj.height/2, obj.width, obj.height);
             }
             else if (obj.type === 'text') {
                 ctx.save();
-                ctx.translate(cx, cy);
-                ctx.rotate(obj.angle || 0);
+                ctx.translate(cx, cy); ctx.rotate(obj.angle || 0);
                 ctx.fillStyle = obj.color || "black";
                 ctx.font = "bold 24px sans-serif";
                 ctx.textAlign = "center";

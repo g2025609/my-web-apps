@@ -65,7 +65,7 @@
             padding: 20px; 
             overflow-y: auto; 
             width: 100%;
-            margin-left: 0; /* 初期はサイドバーを隠す前提 */
+            margin-left: 0; 
         }
 
         /* キャンバスをレスポンシブに */
@@ -91,23 +91,10 @@
         #title { font-size: 1.5rem; margin: 10px 0 15px 0; color: var(--panel); text-align: center; }
         #project-controls { width: 100%; max-width: 500px; }
         
-        /* アクションボタン（スマホで押しやすく巨大化） */
-        #actionBtn { 
-            margin: 20px 0;
-            width: 100%;
-            max-width: 400px;
-            padding: 20px; 
-            font-size: 1.4rem; 
-            background: #e74c3c; 
-            color: white; 
-            border: none; 
-            border-radius: 15px; 
-            font-weight: bold;
-            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
-            -webkit-tap-highlight-color: transparent;
-        }
+        /* アクションボタン（非表示に設定） */
+        #actionBtn { display: none; }
 
-        /* オーバーレイ（サイドバーが開いている時に背景を暗くする） */
+        /* オーバーレイ */
         #overlay {
             display: none;
             position: fixed;
@@ -118,13 +105,12 @@
         body:not(.sidebar-closed) #overlay { display: block; }
 
         @media (min-width: 769px) {
-            /* PCの場合はオーバーレイ不要、サイドバーを常に横に置く設定も可能 */
             #main { padding: 40px; }
             #sidebar-toggle { top: 20px; }
         }
     </style>
 </head>
-<body class="sidebar-closed"> <!-- 初期状態は閉じておく -->
+<body class="sidebar-closed">
 
 <div id="overlay" onclick="toggleSidebar()"></div>
 
@@ -141,13 +127,14 @@
         <canvas id="stage" width="500" height="500"></canvas>
     </div>
     <div id="project-controls"></div>
-    <button id="actionBtn" onclick="triggerPython()">Run Action</button>
+    <button id="actionBtn">Run Action</button> <!-- display:none で隠しています -->
     <div id="status">Initializing...</div>
 </div>
 
 <script>
     let pyodide;
     let currentApp = null;
+    let animationId = null; // ループ管理用
     const canvas = document.getElementById('stage');
     const ctx = canvas.getContext('2d');
 
@@ -167,7 +154,7 @@
     init();
 
     function loadProjectList() {
-        const dirs = ["roulette", "dice", "timer"]; 
+        const dirs = ["roulette", "dice", "timer", "conference_timer", "memo_pad"]; 
         const list = document.getElementById('project-list');
         list.innerHTML = "";
         dirs.forEach(dir => {
@@ -176,13 +163,20 @@
             btn.innerText = "▶ " + dir;
             btn.onclick = () => {
                 loadProject(dir);
-                if (window.innerWidth <= 768) toggleSidebar(); // スマホなら選択後に閉じる
+                if (window.innerWidth <= 768) toggleSidebar(); 
             };
             list.appendChild(btn);
         });
     }
 
     async function loadProject(dir) {
+        // 前のプロジェクトのループを止める
+        if (animationId) cancelAnimationFrame(animationId);
+    
+        // 【追加】前回のプロジェクトが残した独自のHTML要素をクリアする
+        const oldExtra = document.getElementById("memo-pad-container");
+        if (oldExtra) oldExtra.remove();
+        
         document.getElementById('status').innerText = `Loading...`;
         try {
             const resp = await fetch(`./${dir}/main.py`);
@@ -201,26 +195,31 @@
                 document.body.appendChild(newScript).parentNode.removeChild(newScript);
             });
 
-            render();
+            // プロジェクトロード後、自動的にアニメーションループを開始
+            animate(); 
             document.getElementById('status').innerText = "Ready.";
         } catch (e) {
+            console.error(e);
             document.getElementById('status').innerText = "Error.";
         }
     }
 
-    function triggerPython() {
-        if (currentApp) { currentApp.on_click(); animate(); }
-    }
-
     function animate() {
         if (!currentApp) return;
-        currentApp.update();
+        
+        // Pythonのupdateを呼び出す
+        if (currentApp.update) currentApp.update();
+        
         render();
-        if (!currentApp.is_finished()) requestAnimationFrame(animate);
+        
+        // アプリが終了していない限りループを継続
+        if (!currentApp.is_finished || !currentApp.is_finished()) {
+            animationId = requestAnimationFrame(animate);
+        }
     }
 
     function render() {
-        if (!currentApp) return;
+        if (!currentApp || !currentApp.get_draw_data) return;
         const rawData = currentApp.get_draw_data();
         const drawData = rawData.toJs({ dict_converter: Object.fromEntries });
         ctx.clearRect(0, 0, canvas.width, canvas.height);

@@ -2,35 +2,46 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Python WorkStation</title>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
     <style>
-        :root { --bg: #f0f2f5; --panel: #2c3e50; }
-        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; background: var(--bg); }
+        :root { --bg: #f0f2f5; --panel: #2c3e50; --accent: #3498db; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; display: flex; height: 100vh; margin: 0; background: var(--bg); color: #333; }
         
         /* サイドバー */
-        #sidebar { width: 260px; background: var(--panel); color: white; padding: 20px; display: flex; flex-direction: column; }
+        #sidebar { width: 280px; background: var(--panel); color: white; padding: 25px; display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+        #sidebar h3 { margin-top: 0; border-bottom: 2px solid #34495e; padding-bottom: 10px; font-size: 1.2rem; }
         #project-list { flex-grow: 1; overflow-y: auto; margin: 20px 0; }
-        .menu-btn { width: 100%; padding: 12px; margin-bottom: 8px; background: #34495e; color: white; border: none; border-radius: 6px; cursor: pointer; text-align: left; }
-        .menu-btn:hover { background: #456789; }
-        #newProjectName { width: 100%; padding: 8px; border-radius: 4px; border: none; margin-bottom: 8px; box-sizing: border-box; }
+        .menu-btn { width: 100%; padding: 12px; margin-bottom: 10px; background: #34495e; color: white; border: none; border-radius: 8px; cursor: pointer; text-align: left; transition: 0.2s; font-size: 0.95rem; }
+        .menu-btn:hover { background: var(--accent); transform: translateX(5px); }
         
         /* メインエリア */
         #main { flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 40px; overflow-y: auto; }
-        #canvas-container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); line-height: 0; }
-        #project-controls { width: 540px; margin-top: 20px; }
-        #actionBtn { margin-top: 20px; padding: 15px 60px; font-size: 1.2rem; background: #e74c3c; color: white; border: none; border-radius: 40px; cursor: pointer; font-weight: bold; }
-        #status { margin-top: 15px; color: #7f8c8d; font-size: 0.8rem; }
+        #title { margin: 0 0 20px 0; color: var(--panel); font-size: 2rem; }
+        #canvas-container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); line-height: 0; margin-bottom: 30px; }
+        #stage { max-width: 100%; height: auto; }
+
+        /* 操作パネル（Pythonから注入されるUI） */
+        #project-controls { width: 100%; max-width: 550px; }
+        
+        /* 共通アクションボタン */
+        #actionBtn { margin-top: 25px; padding: 18px 80px; font-size: 1.3rem; background: #e74c3c; color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3); transition: 0.3s; }
+        #actionBtn:hover { background: #c0392b; transform: scale(1.05); }
+        #actionBtn:active { transform: scale(0.95); }
+
+        #status { margin-top: 20px; color: #95a5a6; font-size: 0.85rem; }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
-    <h3>Projects</h3>
-    <div id="project-list"></div>
-    <div style="border-top: 1px solid #555; padding-top: 15px;">
-        <input type="text" id="newProjectName" placeholder="New project name...">
-        <button onclick="createNewProject()" style="width:100%; padding:8px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer;">＋ Create</button>
+    <h3>📁 Projects</h3>
+    <div id="project-list">
+        <!-- プロジェクトボタンがここに生成されます -->
+    </div>
+    <div style="font-size: 0.75rem; color: #7f8c8d; text-align: center;">
+        Powered by Pyodide
     </div>
 </div>
 
@@ -41,7 +52,7 @@
     </div>
     <div id="project-controls"></div>
     <button id="actionBtn" onclick="triggerPython()">Run Action</button>
-    <div id="status">Initializing...</div>
+    <div id="status">Initializing Python...</div>
 </div>
 
 <script>
@@ -50,80 +61,99 @@
     const canvas = document.getElementById('stage');
     const ctx = canvas.getContext('2d');
 
+    // 1. Python環境の初期化
     async function init() {
-        pyodide = await loadPyodide();
-        document.getElementById('status').innerText = "Python Ready.";
-        loadProjectList();
+        try {
+            pyodide = await loadPyodide();
+            document.getElementById('status').innerText = "Python Ready.";
+            loadProjectList();
+        } catch (e) {
+            document.getElementById('status').innerText = "Error: Python failed to load.";
+            console.error(e);
+        }
     }
     init();
 
-    async function loadProjectList() {
-        const resp = await fetch('/list-projects');
-        const dirs = await resp.json();
+    // 2. プロジェクトリストの設定（GitHub Pages対応: 手動リスト）
+    function loadProjectList() {
+        // 新しいプロジェクトを追加したら、この配列にフォルダ名を足してください
+        const dirs = ["roulette_project", "dice_project"]; 
+        
         const list = document.getElementById('project-list');
         list.innerHTML = "";
         dirs.forEach(dir => {
             const btn = document.createElement('button');
             btn.className = "menu-btn";
-            btn.innerText = "📁 " + dir;
+            btn.innerText = "▶ " + dir;
             btn.onclick = () => loadProject(dir);
             list.appendChild(btn);
         });
     }
 
-    async function createNewProject() {
-        const name = document.getElementById('newProjectName').value;
-        if (!name) return;
-        await fetch('/create-project', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name: name})
-        });
-        document.getElementById('newProjectName').value = "";
-        loadProjectList();
-    }
-
+    // 3. プロジェクトの読み込み
     async function loadProject(dir) {
         document.getElementById('status').innerText = `Loading ${dir}...`;
-        const resp = await fetch(`./${dir}/main.py`);
-        const code = await resp.text();
         
-        await pyodide.runPythonAsync(code);
-        currentApp = pyodide.globals.get('App')();
-        
-        document.getElementById('title').innerText = dir;
-        
-        // UIの流し込みとスクリプトの評価
-        const controls = document.getElementById('project-controls');
-        controls.innerHTML = currentApp.get_html_layout ? currentApp.get_html_layout() : "";
-        const scripts = controls.querySelectorAll("script");
-        scripts.forEach(oldScript => {
-            const newScript = document.createElement("script");
-            newScript.text = oldScript.text;
-            document.body.appendChild(newScript).parentNode.removeChild(newScript);
-        });
+        try {
+            // 相対パスで読み込む（GitHub Pages対応）
+            const resp = await fetch(`./${dir}/main.py`);
+            if (!resp.ok) throw new Error("File not found");
+            const code = await resp.text();
+            
+            // Pythonコードの実行とAppインスタンスの作成
+            await pyodide.runPythonAsync(code);
+            currentApp = pyodide.globals.get('App')();
+            
+            document.getElementById('title').innerText = dir;
+            
+            // UIの流し込み
+            const controls = document.getElementById('project-controls');
+            controls.innerHTML = currentApp.get_html_layout ? currentApp.get_html_layout() : "";
+            
+            // 注入されたHTML内のscriptタグを有効化
+            const scripts = controls.querySelectorAll("script");
+            scripts.forEach(oldScript => {
+                const newScript = document.createElement("script");
+                newScript.text = oldScript.text;
+                document.body.appendChild(newScript).parentNode.removeChild(newScript);
+            });
 
-        render();
-        document.getElementById('status').innerText = "Project Loaded.";
+            render();
+            document.getElementById('status').innerText = "Project Loaded.";
+        } catch (e) {
+            document.getElementById('status').innerText = "Load Error.";
+            console.error(e);
+        }
     }
 
+    // 4. ボタン操作
     function triggerPython() {
-        if (currentApp) { currentApp.on_click(); animate(); }
+        if (currentApp) { 
+            currentApp.on_click(); 
+            animate(); 
+        }
     }
 
+    // 5. アニメーションループ
     function animate() {
         if (!currentApp) return;
         currentApp.update();
         render();
-        if (!currentApp.is_finished()) requestAnimationFrame(animate);
+        if (!currentApp.is_finished()) {
+            requestAnimationFrame(animate);
+        }
     }
 
+    // 6. 汎用描画エンジン
     function render() {
         if (!currentApp) return;
+        
+        // Pythonから描画データを取得
         const rawData = currentApp.get_draw_data();
         const drawData = rawData.toJs({ dict_converter: Object.fromEntries });
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
         drawData.forEach(obj => {
             const cx = 250 + (obj.x_off || 0);
             const cy = 250 + (obj.y_off || 0);
@@ -131,13 +161,21 @@
             if (obj.type === 'arc') {
                 ctx.beginPath();
                 ctx.fillStyle = obj.color || "white";
-                ctx.moveTo(cx, cy); // 扇形にするために中心へ移動
+                ctx.moveTo(cx, cy); // 扇形にするために中心へ
                 ctx.arc(cx, cy, obj.radius, obj.start, obj.end);
                 ctx.lineTo(cx, cy); // 中心に戻る
                 ctx.fill();
                 ctx.strokeStyle = "white";
+                ctx.lineWidth = 2;
                 ctx.stroke();
-            } else if (obj.type === 'text') {
+            } 
+            else if (obj.type === 'rect') {
+                ctx.beginPath();
+                ctx.strokeStyle = obj.color || "black";
+                ctx.lineWidth = obj.lineWidth || 2;
+                ctx.strokeRect(cx - obj.width/2, cy - obj.height/2, obj.width, obj.height);
+            }
+            else if (obj.type === 'text') {
                 ctx.save();
                 ctx.translate(cx, cy);
                 ctx.rotate(obj.angle || 0);
@@ -146,17 +184,11 @@
                 ctx.textAlign = "center";
                 ctx.fillText(obj.text, obj.x || 0, obj.y || 0);
                 ctx.restore();
-            } else if (obj.type === 'rect') {
-                ctx.beginPath();
-                ctx.strokeStyle = obj.color || "black";
-                ctx.lineWidth = obj.lineWidth || 2;
-                // 中心(cx, cy)からサイズ分だけオフセットして描画
-                ctx.strokeRect(cx - obj.width/2, cy - obj.height/2, obj.width, obj.height);
             }
         });
     }
 
-    // 汎用同期関数（プロジェクト側の input 要素の ID を Python の引数名として送る）
+    // 7. Pythonとのデータ同期（UIの値を一括送信）
     window.updateProjectData = function() {
         if (!currentApp) return;
         const data = {};
@@ -164,7 +196,7 @@
             data[el.id] = el.value;
         });
         currentApp.set_data(pyodide.toPy(data));
-        render();
+        render(); // 反映後の再描画
     };
 </script>
 </body>

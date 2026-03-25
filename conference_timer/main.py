@@ -7,8 +7,6 @@ class App:
         self.elapsed_seconds = 0
         self.active = False
         self.is_paused = True
-        
-        # デフォルト設定（分単位を秒に変換して保持）
         self.bell_minutes = [8, 10, 12]
         self.bell_settings = [m * 60 for m in self.bell_minutes]
         self.bell_fired = [False] * len(self.bell_settings)
@@ -18,7 +16,6 @@ class App:
             <div style="text-align: center; background: #1a1a1a; color: white; padding: 25px; border-radius: 20px; font-family: sans-serif;">
                 <h2 style="margin: 0 0 15px 0; color: #95a5a6; font-size: 1.2rem;">CONFERENCE TIMER</h2>
                 
-                <!-- ベルの時間設定入力エリア -->
                 <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; background: #2c3e50; padding: 15px; border-radius: 12px;">
                     <div style="display: flex; flex-direction: column;">
                         <span style="font-size: 0.7rem; color: #bdc3c7;">1st (min)</span>
@@ -46,7 +43,6 @@ class App:
                         RESET
                     </button>
                 </div>
-
                 <input type="hidden" id="timer_sync" value="">
             </div>
 
@@ -99,15 +95,13 @@ class App:
         '''
 
     def set_data(self, data):
-        # ベルの時間をリアルタイムに更新（分を秒に変換）
         try:
             m1 = float(data.get("bell1", 8))
             m2 = float(data.get("bell2", 10))
             m3 = float(data.get("bell3", 12))
             self.bell_minutes = [m1, m2, m3]
             self.bell_settings = [m * 60 for m in self.bell_minutes]
-        except:
-            pass
+        except: pass
 
         val = data.get("timer_sync", "")
         if val == "start":
@@ -118,13 +112,10 @@ class App:
             self.active = False
             self.is_paused = True
         elif val == "reset":
-            # ベルの設定は維持してリセット
             self.elapsed_seconds = 0
             self.active = False
             self.is_paused = True
             self.bell_fired = [False] * len(self.bell_settings)
-        
-        # 内部同期用フラグをクリア
         data["timer_sync"] = ""
 
     def update(self):
@@ -162,12 +153,10 @@ class App:
 
     def get_draw_data(self):
         draw_data = []
-        # プログレスバー（2番目のベル＝終了予定を100%とする）
         ratio = min(1.0, self.elapsed_seconds / max(1, self.bell_settings[1]))
         color = "#27ae60"
         if self.elapsed_seconds >= self.bell_settings[1]: color = "#e74c3c"
         elif self.elapsed_seconds >= self.bell_settings[0]: color = "#f1c40f"
-        
         draw_data.append({"type": "arc", "color": "#333", "radius": 180, "start": 0, "end": 2*math.pi, "x_off": 0, "y_off": 0})
         draw_data.append({"type": "arc", "color": color, "radius": 180, "start": -math.pi/2, "end": -math.pi/2 + 2*math.pi*ratio, "x_off": 0, "y_off": 0})
         draw_data.append({"type": "arc", "color": "#1a1a1a", "radius": 165, "start": 0, "end": 2*math.pi, "x_off": 0, "y_off": 0})
@@ -175,3 +164,16 @@ class App:
 
     def is_finished(self): return False
     def on_click(self): pass
+
+# --- 自動実行用スクリプト ---
+import js
+def auto_run():
+    # ページ内のRun Actionボタンを探して押す
+    btn = js.document.querySelector("button") # 一番最初のボタン（通常はRun Action）
+    # セレクタをより厳密にするなら: "button[style*='background: rgb(231, 76, 60)']" など
+    if btn and "Run" in btn.innerText:
+        btn.click()
+    else:
+        js.setTimeout(js.create_proxy(auto_run), 300)
+
+auto_run()

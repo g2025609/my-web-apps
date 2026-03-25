@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Python WorkStation</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <style>
+        :root { --bg: #f0f2f5; --panel: #2c3e50; }
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; background: var(--bg); }
+        
+        /* サイドバー */
+        #sidebar { width: 260px; background: var(--panel); color: white; padding: 20px; display: flex; flex-direction: column; }
+        #project-list { flex-grow: 1; overflow-y: auto; margin: 20px 0; }
+        .menu-btn { width: 100%; padding: 12px; margin-bottom: 8px; background: #34495e; color: white; border: none; border-radius: 6px; cursor: pointer; text-align: left; }
+        .menu-btn:hover { background: #456789; }
+        #newProjectName { width: 100%; padding: 8px; border-radius: 4px; border: none; margin-bottom: 8px; box-sizing: border-box; }
+        
+        /* メインエリア */
+        #main { flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 40px; overflow-y: auto; }
+        #canvas-container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); line-height: 0; }
+        #project-controls { width: 540px; margin-top: 20px; }
+        #actionBtn { margin-top: 20px; padding: 15px 60px; font-size: 1.2rem; background: #e74c3c; color: white; border: none; border-radius: 40px; cursor: pointer; font-weight: bold; }
+        #status { margin-top: 15px; color: #7f8c8d; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h3>Projects</h3>
+    <div id="project-list"></div>
+    <div style="border-top: 1px solid #555; padding-top: 15px;">
+        <input type="text" id="newProjectName" placeholder="New project name...">
+        <button onclick="createNewProject()" style="width:100%; padding:8px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer;">＋ Create</button>
+    </div>
+</div>
+
+<div id="main">
+    <h1 id="title">Select a Project</h1>
+    <div id="canvas-container">
+        <canvas id="stage" width="500" height="500"></canvas>
+    </div>
+    <div id="project-controls"></div>
+    <button id="actionBtn" onclick="triggerPython()">Run Action</button>
+    <div id="status">Initializing...</div>
+</div>
+
+<script>
+    let pyodide;
+    let currentApp = null;
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+
+    async function init() {
+        pyodide = await loadPyodide();
+        document.getElementById('status').innerText = "Python Ready.";
+        loadProjectList();
+    }
+    init();
+
+    async function loadProjectList() {
+        const resp = await fetch('/list-projects');
+        const dirs = await resp.json();
+        const list = document.getElementById('project-list');
+        list.innerHTML = "";
+        dirs.forEach(dir => {
+            const btn = document.createElement('button');
+            btn.className = "menu-btn";
+            btn.innerText = "📁 " + dir;
+            btn.onclick = () => loadProject(dir);
+            list.appendChild(btn);
+        });
+    }
+
+    async function createNewProject() {
+        const name = document.getElementById('newProjectName').value;
+        if (!name) return;
+        await fetch('/create-project', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name})
+        });
+        document.getElementById('newProjectName').value = "";
+        loadProjectList();
+    }
+
+    async function loadProject(dir) {
+        document.getElementById('status').innerText = `Loading ${dir}...`;
+        const resp = await fetch(`./${dir}/main.py`);
+        const code = await resp.text();
+        
+        await pyodide.runPythonAsync(code);
+        currentApp = pyodide.globals.get('App')();
+        
+        document.getElementById('title').innerText = dir;
+        
+        // UIの流し込みとスクリプトの評価
+        const controls = document.getElementById('project-controls');
+        controls.innerHTML = currentApp.get_html_layout ? currentApp.get_html_layout() : "";
+        const scripts = controls.querySelectorAll("script");
+        scripts.forEach(oldScript => {
+            const newScript = document.createElement("script");
+            newScript.text = oldScript.text;
+            document.body.appendChild(newScript).parentNode.removeChild(newScript);
+        });
+
+        render();
+        document.getElementById('status').innerText = "Project Loaded.";
+    }
+
+    function triggerPython() {
+        if (currentApp) { currentApp.on_click(); animate(); }
+    }
+
+    function animate() {
+        if (!currentApp) return;
+        currentApp.update();
+        render();
+        if (!currentApp.is_finished()) requestAnimationFrame(animate);
+    }
+
+    function render() {
+        if (!currentApp) return;
+        const rawData = currentApp.get_draw_data();
+        const drawData = rawData.toJs({ dict_converter: Object.fromEntries });
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawData.forEach(obj => {
+            const cx = 250 + (obj.x_off || 0);
+            const cy = 250 + (obj.y_off || 0);
+
+            if (obj.type === 'arc') {
+                ctx.beginPath();
+                ctx.fillStyle = obj.color || "white";
+                ctx.moveTo(cx, cy); // 扇形にするために中心へ移動
+                ctx.arc(cx, cy, obj.radius, obj.start, obj.end);
+                ctx.lineTo(cx, cy); // 中心に戻る
+                ctx.fill();
+                ctx.strokeStyle = "white";
+                ctx.stroke();
+            } else if (obj.type === 'text') {
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(obj.angle || 0);
+                ctx.fillStyle = obj.color || "black";
+                ctx.font = "bold 24px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(obj.text, obj.x || 0, obj.y || 0);
+                ctx.restore();
+            } else if (obj.type === 'rect') {
+                ctx.beginPath();
+                ctx.strokeStyle = obj.color || "black";
+                ctx.lineWidth = obj.lineWidth || 2;
+                // 中心(cx, cy)からサイズ分だけオフセットして描画
+                ctx.strokeRect(cx - obj.width/2, cy - obj.height/2, obj.width, obj.height);
+            }
+        });
+    }
+
+    // 汎用同期関数（プロジェクト側の input 要素の ID を Python の引数名として送る）
+    window.updateProjectData = function() {
+        if (!currentApp) return;
+        const data = {};
+        document.querySelectorAll('#project-controls input, #project-controls textarea').forEach(el => {
+            data[el.id] = el.value;
+        });
+        currentApp.set_data(pyodide.toPy(data));
+        render();
+    };
+</script>
+</body>
+</html>
